@@ -197,6 +197,150 @@ so we will create a function that will get the time and then :
                 await db.execute(text("SELECT 1"))
                 return {"status": "healthy", "database": "ok"}
 
+-------------------------------------------------------------------------------------------------------------
+
+14- we need to change the compose.yaml so it won't haev the password and other things:
+
+            services:
+            db:
+                image: postgres:18-trixie
+                env_file:
+                - ./backend/.env
+                ports:
+                - "127.0.0.1:5433:5432"
+                volumes:
+                - pgdata:/var/lib/postgresql
+
+            volumes:
+            pgdata:
+
+now push the project to github
+
+-------------------------------------------------------------------------------------------------------------
+
+15- we will use alembic to modify and change things in our database like tables ......:
+        inside db folder we will create base.py and what we will write is it we will right it one time only , and we use it to never write sql queries so we will use ORM
+        - so we can create database tables with python classes:
+            from sqlalchemy.orm import DeclarativeBase
+
+            class Base(DeclarativeBase):
+                pass
+
+and why this only , because it will let us write a python class , and it will translate it to a sql query
+
+-------------------------------------------------------------------------------------------------------------
+
+16- now create a new folder named models inside it a __init__.py, now for each tables we will create a new file for it:
+        import uuid
+        from datetime import datetime
+        from sqlalchemy import DateTime, String, func
+        from sqlalchemy.orm import Mapped, mapped_column
+        from app.db.base import Base
+
+and in each one , we will create the shape of the table (blueprint) , but the alembic who will create the table , we only design the shape:
+
+    class User(Base):
+        __tablename__ = "users"             # the name of the table
+
+        #    then the columns like this
+        #    Mapped[the type]       mapped_column(the configuration)
+
+        id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid7)
+        email: Mapped[str] = mapped_column(String(255), unique=True, index=True)
+        hashed_password: Mapped[str] = mapped_column(String(255))
+        full_name: Mapped[str] = mapped_column(String(100))
+        created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    but this is only the shape , the table is not created , we need to migrate!!!!!!
+
+-------------------------------------------------------------------------------------------------------------
+
+17- with alembic we create the tables ,
+    BBBBBBBBEEEEEEEEEEEE AWARE!!!!!!!!!
+    alembic create tables that are not existed yet , it can change or modify an existed table
+
+    so let's install alembic(but remember to be inside the backend directory):
+    - uv add alembic
+
+    and then we have a setting up for it :
+
+    - uv run alembic init -t async alembic -------------(alembic = this is the folder name)
+
+    this will create a new folder named alembic , and inside it we will have some files and all we need is the env.py(and these changes will do it one time only for every new project):
+    1- settings
+    2- base
+    3- where is the models
+
+
+    where:
+        line 10: from app.core.config import settings
+                 from app.db.base import Base
+                 import app.models  -----------------------when this is imported the __init__.py will
+                                                            be called so this is why it is like this
+
+        line 16: after the config=context.config:
+            config.set_main_option(
+                "sqlalchemy.url",
+                settings.database_url.render_as_string(hide_password=False).replace("%", "%%"),
+            ),
+
+        line 32: the target_metadata:
+            target_metadata = Base.metadata
+
+
+    so we will go to the models/__init.py__:
+
+    each model u create(i mean table) , we should import it in this specific __init__.py , beacuse alembic need to see all these models:
+
+   - from app.models.user import User
+
+
+
+     after every thing , we can try it with this :
+
+       - uv run alembic current
+
+       if it return this(it worked!!!!!) :
+            INFO  [alembic.runtime.migration] Context impl PostgresqlImpl.
+            INFO  [alembic.runtime.migration] Will assume transactional DDL.
+
+-------------------------------------------------------------------------------------------------------------
+
+18-
+
+-------------------------------------------------------------------------------------------------------------
+
+19-
+
+-------------------------------------------------------------------------------------------------------------
+
+20-
+
+-------------------------------------------------------------------------------------------------------------
+
+21-
+
+-------------------------------------------------------------------------------------------------------------
+
+22-
+
+-------------------------------------------------------------------------------------------------------------
+
+23-
+
+-------------------------------------------------------------------------------------------------------------
+
+24-
+
+-------------------------------------------------------------------------------------------------------------
+
+25-
+
+-------------------------------------------------------------------------------------------------------------
+
+26-
+
+-------------------------------------------------------------------------------------------------------------
 
 
 
