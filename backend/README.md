@@ -1,3 +1,5 @@
+-- Active: 1790186618178@@127.0.0.1@3306
+
 <!--
 
 1- uv init [name of the project] --no-package --python 3.14
@@ -219,7 +221,7 @@ now push the project to github
 -------------------------------------------------------------------------------------------------------------
 
 15- we will use alembic to modify and change things in our database like tables ......:
-        inside db folder we will create base.py and what we will write is it we will right it one time only , and we use it to never write sql queries so we will use ORM
+        inside db folder we will create base.py and what we will write in it is one time only , and we use it to never write sql queries so we will use ORM
         - so we can create database tables with python classes:
             from sqlalchemy.orm import DeclarativeBase
 
@@ -306,7 +308,35 @@ and in each one , we will create the shape of the table (blueprint) , but the al
 
 -------------------------------------------------------------------------------------------------------------
 
-18-
+18- check that docker andthe database is running , and run this command:
+
+    - uv run alembic revision --autogenerate -m "create users table"
+
+    this mean:
+        we are telling alembic to create a new migration file , and the (--autogenerate) tells alembic to work out the changes byitself,by comparing our models with the database, the (-m) create the users table with a message ("create users table") about what changes we have done
+
+    so if you open the alembic/versions/1523125673_create_users_table
+    and this is what  we call (THE MIGRATION FILE), you will see the comparing alembic did to get the right things for our table in the upgrade(), and in the downgrade() will see the undo of these changes
+
+    - and to use the migration file, we will use the upgrade() with this command:
+            -  uv run alembic upgrade head
+      if it gave u this:
+            INFO  [alembic.runtime.migration] Context impl PostgresqlImpl.
+            INFO  [alembic.runtime.migration] Will assume transactional DDL.
+            INFO  [alembic.runtime.migration] Running upgrade  -> 79db5bd516fc, create users table
+
+      this means it worked!!!!!!!
+
+    - let's see this table in the database , we have two ways:
+
+        1- open pgadmin software and connect to ur database (with the details in the .env file , like username and password)
+        ------------- servers----register----server...............
+
+        2- or u can download the extension (sqltools) and its driver (@tag:sqltools-driver) get the postgres and else:
+                - then connect your databse like the details in your .env file
+                - so now it is connected and u can see it on the left panel
+                - navigate to /schemas/public/tables/users and press right then(show table records)
+
 
 -------------------------------------------------------------------------------------------------------------
 
