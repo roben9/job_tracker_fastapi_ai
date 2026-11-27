@@ -16,6 +16,11 @@ class Settings(BaseSettings):
     # if we are using an api from an llm
     # gemini_api_key: str
 
+    secret_key: str
+
+    access_token_expire_minutes: int = 30
+    refresh_token_expire_days: int = 7
+
     @property
     def database_url(self) -> URL:
         database_url = URL.create(

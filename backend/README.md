@@ -180,7 +180,7 @@ so we will create a function that will get the time and then :
 
 -------------------------------------------------------------------------------------------------------------
 
-13- each route need a session so wwe will create a function for the session dependancies in the session.py:
+13- each route need a session so we will create a function for the session dependancies in the session.py:
 
             async def get_db():
                 async with SessionLocal() as session:
@@ -340,31 +340,225 @@ and in each one , we will create the shape of the table (blueprint) , but the al
 
 -------------------------------------------------------------------------------------------------------------
 
-19-
+19- now let's talk about hashing the password, we need to know:
+        1- how to hash the password
+        2- how to verify the hashed password
+
+    in the core folder we will create security.py, we will have in it 2 functions , one to hash and one to verify.
+
+    we have in python a library for that it is PWD for hashing, and it use an algorithm called Argon 2
+    and this is the FASTAPI docs recommendation , because it is developed to be slow , for the security reasons , like if an attacker , beacuse the attacker will try billions of guesses , so this will be expensive for the attacker
+
+    let's install it (again make sure u r in the backend folder):
+        -     uv add "pwdlib[argon2]"
+
+    and in the security.py:
+
+            from pwdlib import PasswordHash
+            # this is the main player
+            password_hash = PasswordHash.recommended()  # this recommend will give the argon2
+
+            # this for hashing the password
+            def hash_password(password: str) -> str:
+                return password_hash.hash(password)
+
+            # this for verify the password
+            def verify_password(password: str, hashed_password: str) -> bool:
+                return password_hash.verify(password, hashed_password)
+
+    *******but there is some issues:
+             1- incoming data (password from the user)
+             2- outgoing data (hashed from the server)
+
+        - we fix this with SCHEMA
+            - this is a pydantic class , it describe what data is allowed to come , and what data is allowed to go out (in django , it is like the serializers, which convert the model object to json format)
+            - in FASTAPI , schema do the same thing
+
+    how to do this????? inside the app folder we will create a new folder called schemas (as always we need to create in it a __init__.py):
+
+        - inside , we will create a user.py for the models/user.py model , this file we will use this schema in the request and response lifecycle , it will not do anything with the database tables,here we will handle:
+            1- what the user will send us when signing up (eg. should be 8 characters)
+                in simple words:  "what are we expecting from the user"
+                * so here , we should handle :
+                    1- email
+                    2- full name
+                    3- hashed password
+
+            2- what we will send the user:
+                * we need to use some special things :
+                    1-model config from the ConfigDict(from_attributes=True)
+                        # becuase pydantic read details like this (user["email"]), but user is an alembic
+                        object so it should read like this (user.email) {an attributes not dictionary}
+                    2- the other columns in the user table: email,fullname,created_at
+
 
 -------------------------------------------------------------------------------------------------------------
 
-20-
+20- Store the User data:
+
+    - we will hae a lot of routes , so we will create a folder in app folder , call it api
+    - inside it create a file for the auth (singup,login,forget password......)
+    - create the prefix for all the auth api like:
+        router = APIRouter(prefix="/auth", tags=["auth"])
+
+            *  http://127.0.0.1:8000/auth/singup
+                # in the url (/auth) is the prefix
+
+            * the tag, is for the docs , when u open the docs FASTAPI will create section called it auth (tags=["auth"]) and make every api belong to the auth inside this section
+
+    - we will create the route:
+    @router.post("/signup", response_model=UserOut, status_code=status.HTTP_201_CREATED)
+                # the endpoint , and then what is the response(will call UserOut) and the status code is 201 for creating
+        # for every route we will add the db session as we talked before
+    async def signup(user_in: UserCreate, db: Annotated[AsyncSession, Depends(get_db)]):
+        # first we need to hash the password , and we run it in another thread because argon2 will take time (as we said)
+        hashed = await run_in_threadpool(hash_password, user_in.password)
+
+        # put the user inputs in its fields (from app/models/user.py)
+        user = User(email=user_in.email, hashed_password=hashed, full_name=user_in.full_name)
+
+        # finally we need to stage it for saving
+        # and the staging is because alembic do everything to the end OR....... nothing gonna be done
+
+        db.add(user)  # this is just staging
+        await db.commit()  # saving the data
+        await db.refresh(user)
+        # refreshing the user object so the id and the created_at will launch and be created
+
+        # after this return , FASTAPI will call UserOut() and match the things in it with the data we provide
+        # and notice there is no hash paassword in the UserOut , so the password won't be sent to the user
+        return user
+
+    - now after we create the api and the router, we should tell the main.py that there is more routes to take notice for :
+        * after we create app = FastAPI(title=settings.app_name):
+            app.include_router(auth.router)
+
+    - try it in the docs and add a user and check the database , NICEEEEEEEEE!!!!!!!!!!!
 
 -------------------------------------------------------------------------------------------------------------
 
-21-
+21- there is 2 problems:
+
+        1- when i enter an already existed email , the server will throw a 500 status code and the app crash
+        2- when i enter the same email but in upper case(hello = HELLO) , the database sees it as different email but in real life on the web it is the same email
+
+    * the fix :
+
+        we will make every user input in the signup to lower case,and then we will go to the database and check there if this email is already exist , and then we will decide :
+            1- throw an exception (like 409_conflict)
+            2- make it pass and enter the database
+
+                email = user_in.email.lower()
+                result = await db.execute(select(User).where(User.email == email))
+                if result.scalar_one_or_none():
+                    raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="email already exists!!!")
 
 -------------------------------------------------------------------------------------------------------------
 
-22-
+22- Tokens:
+
+    we need :
+        1- access token (expires in 30 minutes (the default))
+        2- refresh token (expires in 7 days (the default))
+
+    and we create and read them by a library called PYJWT (json web token), as always using uv (as always in the backend folder):
+        - uv add pyjwt
+
+    after this , we need to create the secret key,this is how, we have an utility in python named "secrets":
+        - uv run python
+            * in the python :
+                import secrets
+                print(secrets.token_hex(32))
+
+    this will give u a key (generated locally, never generate it on a website)
+
+    take this key and put it in the .env file:
+        * SECRET_KEY=*****************************
+
+    in the config.py(under the postgres config):
+        secret_key: str
+
+    *********** this key will sign those tokens , for security and maitainability , because this key will help your backend to know that this tokens are generated from our application , not modified
 
 -------------------------------------------------------------------------------------------------------------
 
-23-
+23- now for the tokens , in the config.py we will add this expiring time:
+        access_token_expire_minutes: int = 30(the default we can change it)
+        refresh_token_expire_days: int = 7(the default we can change it)
+
+    * now we need 3 small function to create these 2 tokens,in the security.py:
+    # subject says which user this token belongs to , so this will be the user ID
+        1- create token
+        2- create access token
+        3- create refresh token
+
+    * we will use the "HS256" ALGORITHM
+    * and we add it to the utc for each user, not the local timezone, because utc is a thing every server understand it,and "timedelta" is the way for python to detect time in the right way
+    * then we need a payload(some meta data we send it with the access token)
+    * finally we need to sign the tokens with the SECRET_KEY with the JWT:
+        - encode()
+        - give it the payload
+        - the secret key
+        - the algorithm
+
+    and then how to check if it worked:
+        - uv run python
+        - from app.core.security import create_access_token,create_refresh_token
+        - print(create_access_token("1"))
+    this will give u a token , go to : https://www.jwt.io/
+    and put the token there and u will see the json breakdown of it
+
 
 -------------------------------------------------------------------------------------------------------------
 
-24-
+24- we will create a schema for the token in the schema folder token.py:
+        inside it is : what we send back after a successful login,and the type: "bearer" mean(whoever hold it is the owner)
+        and we will use something in FASTAPI called
+    now in the OAuth2PasswordRequestForm.......it is a form data from the user (in our project we take form the user email and password and fullname)
+
+    * now in the auth.py , we will create a new endpoint for the login API(OAuth2PasswordRequestForm):
+
+        so we create a new API (/login)
+        and we need 2 dependancies , the database session and the form_data so the email and the passowrd are comming from it
+        ********* in the OAuth2PasswordRequestForm, it has (username , password) , but because in our project we are asking the user for his email , so ............. form_data.username == user.email
+
+    * so we take a form_data (which is from python OAuth2......) and have the username and password
+    * we will take the email (to lower case as previous) and see if it is in the database
+    * if the email is not exist, raise an 401 error(not found user with this email)
+    * if the email existed , check if the password is right?? the same thing in the threadpool (because the argon2 will take time)################we will use the verify_password we created earlier
+    * if the email and the password correct , then create the tokens
 
 -------------------------------------------------------------------------------------------------------------
 
-25-
+25- let's create and end point to see the profile details:
+
+    - in the api folder we will create a file named users.py:
+        here we will create all the api for the users like get delete update .......
+
+    simple as the other:
+        - we will create the router
+        - include it in the main.py app
+        - create the endpoint
+
+    - when we try it it will give a 500 error, because there is no access token in the request , and this is why we create the payload:
+        * the backend send it to the frontend
+        * when the frontend ask for something , they will provide the same payload with the request
+
+    - the user have it when we send the token (encoded), and now when he ask for something , first thing we will o is to decode it
+        * from the FASTAPI documentation, we will use the OAuthPasswordBearer (because our token is Bearer):
+            ------ oauth2_scheme=OAuth2PasswordBearer(tokenUrl="/auth/login") ------
+
+    so go to security.py and create a decode_token() function:
+
+        - it will take the payload and decode it
+        - if there is no token then None
+        - if the type of the payload is not "access" as we expected then None
+        - else return the sub ( which is our user ID) :
+            {
+            "sub": "1",
+            "type": "access",   -----------------------------------this is from the jwt.io
+            "exp": 1795807398
+            }
 
 -------------------------------------------------------------------------------------------------------------
 
